@@ -1,0 +1,8 @@
+PySide6
+pandas
+numpy
+matplotlib
+scipy
+Pillow
+PyWavelets
+vmdpy

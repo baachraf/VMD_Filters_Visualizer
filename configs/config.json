@@ -1,0 +1,95 @@
+{
+  "rppg_column_name": "rPPG_signal",
+  "fps": 20,
+  "preprocessing": {
+    "detrend": {
+      "enabled": false,
+      "lambda": 100
+    },
+    "normalization": {
+      "enabled": true,
+      "method": "z-score"
+    },
+    "harmonics": {
+      "enabled": false,
+      "harmonics_gain": 2.0,
+      "freq_min": 0.7,
+      "freq_max": 4.0
+    },
+    "fft_size": 1024
+  },
+  "vmd": {
+    "K": 4,
+    "alpha": 99.99,
+    "tau": 0.0,
+    "DC": 0,
+    "init": 1,
+    "tol": 0.0,
+    "ALPHA": 99.99,
+    "TAU": 0.0,
+    "INIT": 1,
+    "TOL": 0.0
+  },
+  "mode_selection": {
+    "freq_min": 0.7,
+    "freq_max": 4.0,
+    "correlation_threshold": 0.5,
+    "energy_threshold": 5.0,
+    "kurtosis_max": 3.0,
+    "selection_method": "frequency+correlation",
+    "correlation_reference": "original"
+  },
+  "auto_optimize": {
+    "K_range": [
+      3,
+      7
+    ],
+    "alpha_range": [
+      99.99,
+      99.99
+    ],
+    "optimization_metric": "spectral_purity"
+  },
+  "traditional_filters": {
+    "butterworth": {
+      "order": 4,
+      "freq_min": 0.7,
+      "freq_max": 4.0
+    },
+    "chebyshev": {
+      "order": 4,
+      "ripple": 0.5,
+      "freq_min": 0.7,
+      "freq_max": 4.0
+    },
+    "elliptic": {
+      "order": 4,
+      "passband_ripple": 0.5,
+      "stopband_atten": 40,
+      "freq_min": 0.7,
+      "freq_max": 4.0
+    },
+    "moving_average": {
+      "window_size": 15
+    },
+    "savgol": {
+      "window_size": 15,
+      "poly_order": 3
+    },
+    "wavelet": {
+      "wavelet": "db4",
+      "level": 4,
+      "threshold_mode": "soft"
+    }
+  },
+  "ui_state": {
+    "left_panel_collapsed": false,
+    "show_individual_modes": false,
+    "chart_display_mode": "all"
+  },
+  "chart_height": 150,
+  "signal": {
+    "start_time": 60.0,
+    "duration": 40.0
+  }
+}
