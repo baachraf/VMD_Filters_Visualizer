@@ -89,34 +89,37 @@ def run_filters_computation(params):
     signal = params['signal']
     fps = params['fps']
     original_signal = signal.copy()
-    
-    # Preprocessing
+
+    # --- Create preprocessed signal for comparison ---
+    preprocessed_signal = original_signal.copy()
     preproc_label_parts = []
     if params['detrend']['enabled']:
-        signal = computation.detrend_signal(signal, params['detrend']['lambda'])
+        preprocessed_signal = computation.detrend_signal(preprocessed_signal, params['detrend']['lambda'])
         preproc_label_parts.append("Detrend")
     
     # Normalize (Always enabled)
-    signal = computation.normalize_signal(signal, 'z-score')
+    preprocessed_signal = computation.normalize_signal(preprocessed_signal, 'z-score')
     preproc_label_parts.append("Norm")
         
     if params['harmonics']['enabled']:
         gain = params['harmonics']['gain']
         freq_min = params['harmonics']['freq_min']
         freq_max = params['harmonics']['freq_max']
-        signal = computation.enhance_harmonics(signal, fps, freq_min, freq_max, gain)
+        preprocessed_signal = computation.enhance_harmonics(preprocessed_signal, fps, freq_min, freq_max, gain)
         preproc_label_parts.append("Harmonics")
         
     preproc_label = " + ".join(preproc_label_parts) if preproc_label_parts else "None"
     
-    results = {'preprocessed_signal': signal, 'preproc_label': preproc_label}
+    results = {'preprocessed_signal': preprocessed_signal, 'preproc_label': preproc_label}
     
+    # --- Apply all other filters to the ORIGINAL raw signal ---
+
     # Filter Harmonics (Specific to filter tab)
     if params['filter_harmonics']['enabled']:
         gain = params['filter_harmonics']['gain']
         freq_min = params['filter_harmonics']['freq_min']
         freq_max = params['filter_harmonics']['freq_max']
-        enhanced_sig = computation.enhance_harmonics(signal, fps, freq_min, freq_max, gain)
+        enhanced_sig = computation.enhance_harmonics(original_signal, fps, freq_min, freq_max, gain)
         results['Harmonics Enhanced'] = {
             'signal': enhanced_sig, 
             'hr': computation.estimate_heart_rate(enhanced_sig, fps), 
@@ -126,7 +129,7 @@ def run_filters_computation(params):
     # Butterworth
     if params['butterworth']['enabled']:
         p = params['butterworth']
-        filtered = filters.apply_butterworth(signal, p['order'], p['freq_min'], p['freq_max'], fps)
+        filtered = filters.apply_butterworth(original_signal, p['order'], p['freq_min'], p['freq_max'], fps)
         results['Butterworth'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -136,7 +139,7 @@ def run_filters_computation(params):
     # Chebyshev
     if params['chebyshev']['enabled']:
         p = params['chebyshev']
-        filtered = filters.apply_chebyshev(signal, p['order'], p['ripple'], p['freq_min'], p['freq_max'], fps)
+        filtered = filters.apply_chebyshev(original_signal, p['order'], p['ripple'], p['freq_min'], p['freq_max'], fps)
         results['Chebyshev'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -146,7 +149,7 @@ def run_filters_computation(params):
     # Chebyshev II
     if params['cheby2']['enabled']:
         p = params['cheby2']
-        filtered = filters.apply_cheby2(signal, p['order'], p['stopband_atten'], p['freq_min'], p['freq_max'], fps)
+        filtered = filters.apply_cheby2(original_signal, p['order'], p['stopband_atten'], p['freq_min'], p['freq_max'], fps)
         results['Chebyshev II'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -156,7 +159,7 @@ def run_filters_computation(params):
     # Elliptic
     if params['elliptic']['enabled']:
         p = params['elliptic']
-        filtered = filters.apply_elliptic(signal, p['order'], p['passband_ripple'], p['stopband_atten'], p['freq_min'], p['freq_max'], fps)
+        filtered = filters.apply_elliptic(original_signal, p['order'], p['passband_ripple'], p['stopband_atten'], p['freq_min'], p['freq_max'], fps)
         results['Elliptic'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -165,7 +168,7 @@ def run_filters_computation(params):
         
     # Moving Average
     if params['moving_average']['enabled']:
-        filtered = filters.apply_moving_average(signal, params['moving_average']['window_size'])
+        filtered = filters.apply_moving_average(original_signal, params['moving_average']['window_size'])
         results['Moving Average'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -175,7 +178,7 @@ def run_filters_computation(params):
     # Savgol
     if params['savgol']['enabled']:
         p = params['savgol']
-        filtered = filters.apply_savgol(signal, p['window_size'], p['poly_order'])
+        filtered = filters.apply_savgol(original_signal, p['window_size'], p['poly_order'])
         results['Savitzky-Golay'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -185,7 +188,7 @@ def run_filters_computation(params):
     # Wavelet
     if params['wavelet']['enabled']:
         p = params['wavelet']
-        filtered = filters.apply_wavelet(signal, p['wavelet'], p['level'], p['threshold_mode'])
+        filtered = filters.apply_wavelet(original_signal, p['wavelet'], p['level'], p['threshold_mode'])
         results['Wavelet Denoising'] = {
             'signal': filtered, 
             'hr': computation.estimate_heart_rate(filtered, fps), 
@@ -468,7 +471,7 @@ class VMDrPPGMainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("VMD and Filters Visualizer") # Changed application title
-        self.setGeometry(100, 100, 1300, 800)
+        self.setGeometry(100, 100, 1400, 800)
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget) 
@@ -1200,6 +1203,7 @@ class VMDrPPGMainWindow(QMainWindow):
         hbox_freq = QHBoxLayout()
         hbox_freq.setSpacing(2) # Tight spacing
         self.mode_inputs['freq_min'] = QDoubleSpinBox()
+        self.mode_inputs['freq_min'].setSingleStep(0.1) # Set step to 0.1
         self.mode_inputs['freq_min'].setValue(self.config['mode_selection']['freq_min'])
         self.mode_inputs['freq_min'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_inputs['freq_min'].setToolTip("Minimum frequency (Hz) for mode selection.")
@@ -1208,6 +1212,7 @@ class VMDrPPGMainWindow(QMainWindow):
         hbox_freq.addWidget(QLabel("-"))
         
         self.mode_inputs['freq_max'] = QDoubleSpinBox()
+        self.mode_inputs['freq_max'].setSingleStep(0.1) # Set step to 0.1
         self.mode_inputs['freq_max'].setValue(self.config['mode_selection']['freq_max'])
         self.mode_inputs['freq_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_inputs['freq_max'].setToolTip("Maximum frequency (Hz) for mode selection.")
@@ -1226,6 +1231,7 @@ class VMDrPPGMainWindow(QMainWindow):
         lay.addWidget(QLabel("Energy % >"), 1, 2)
         self.mode_inputs['energy_threshold'] = QDoubleSpinBox()
         self.mode_inputs['energy_threshold'].setValue(self.config['mode_selection']['energy_threshold'])
+        self.mode_inputs['energy_threshold'].setSingleStep(0.1) # Keep 0.1 for percentage
         self.mode_inputs['energy_threshold'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay.addWidget(self.mode_inputs['energy_threshold'], 1, 3)
 
@@ -1233,6 +1239,7 @@ class VMDrPPGMainWindow(QMainWindow):
         lay.addWidget(QLabel("Kurtosis <"), 2, 0)
         self.mode_inputs['kurtosis_max'] = QDoubleSpinBox()
         self.mode_inputs['kurtosis_max'].setValue(self.config['mode_selection']['kurtosis_max'])
+        self.mode_inputs['kurtosis_max'].setSingleStep(0.1) # Keep 0.1
         self.mode_inputs['kurtosis_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lay.addWidget(self.mode_inputs['kurtosis_max'], 2, 1)
 
@@ -1504,12 +1511,14 @@ class VMDrPPGMainWindow(QMainWindow):
         b_lay.addWidget(QLabel("F Min:"), 0, 2)
         self.butter_inputs['freq_min'] = QDoubleSpinBox()
         self.butter_inputs['freq_min'].setRange(0.1, 10)
+        self.butter_inputs['freq_min'].setSingleStep(0.1)
         self.butter_inputs['freq_min'].setValue(self.config['traditional_filters']['butterworth']['freq_min'])
         self.butter_inputs['freq_min'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         b_lay.addWidget(self.butter_inputs['freq_min'], 0, 3)
         b_lay.addWidget(QLabel("F Max:"), 0, 4)
         self.butter_inputs['freq_max'] = QDoubleSpinBox()
         self.butter_inputs['freq_max'].setRange(0.1, 10)
+        self.butter_inputs['freq_max'].setSingleStep(0.1)
         self.butter_inputs['freq_max'].setValue(self.config['traditional_filters']['butterworth']['freq_max'])
         self.butter_inputs['freq_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         b_lay.addWidget(self.butter_inputs['freq_max'], 0, 5)
@@ -1537,16 +1546,19 @@ class VMDrPPGMainWindow(QMainWindow):
         c_lay.addWidget(QLabel("Ripple:"), 0, 2)
         self.cheby_inputs['ripple'] = QDoubleSpinBox()
         self.cheby_inputs['ripple'].setRange(0.1, 5)
+        self.cheby_inputs['ripple'].setSingleStep(0.1)
         self.cheby_inputs['ripple'].setValue(self.config['traditional_filters']['chebyshev']['ripple'])
         self.cheby_inputs['ripple'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         c_lay.addWidget(self.cheby_inputs['ripple'], 0, 3)
         c_lay.addWidget(QLabel("F Min:"), 1, 0)
         self.cheby_inputs['freq_min'] = QDoubleSpinBox()
+        self.cheby_inputs['freq_min'].setSingleStep(0.1)
         self.cheby_inputs['freq_min'].setValue(self.config['traditional_filters']['chebyshev']['freq_min'])
         self.cheby_inputs['freq_min'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         c_lay.addWidget(self.cheby_inputs['freq_min'], 1, 1)
         c_lay.addWidget(QLabel("F Max:"), 1, 2)
         self.cheby_inputs['freq_max'] = QDoubleSpinBox()
+        self.cheby_inputs['freq_max'].setSingleStep(0.1)
         self.cheby_inputs['freq_max'].setValue(self.config['traditional_filters']['chebyshev']['freq_max'])
         self.cheby_inputs['freq_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         c_lay.addWidget(self.cheby_inputs['freq_max'], 1, 3)
@@ -1578,11 +1590,13 @@ class VMDrPPGMainWindow(QMainWindow):
         c2_lay.addWidget(self.cheby2_inputs['stopband_atten'], 0, 3)
         c2_lay.addWidget(QLabel("F Min:"), 1, 0)
         self.cheby2_inputs['freq_min'] = QDoubleSpinBox()
+        self.cheby2_inputs['freq_min'].setSingleStep(0.1)
         self.cheby2_inputs['freq_min'].setValue(self.config['traditional_filters']['cheby2']['freq_min'])
         self.cheby2_inputs['freq_min'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         c2_lay.addWidget(self.cheby2_inputs['freq_min'], 1, 1)
         c2_lay.addWidget(QLabel("F Max:"), 1, 2)
         self.cheby2_inputs['freq_max'] = QDoubleSpinBox()
+        self.cheby2_inputs['freq_max'].setSingleStep(0.1)
         self.cheby2_inputs['freq_max'].setValue(self.config['traditional_filters']['cheby2']['freq_max'])
         self.cheby2_inputs['freq_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         c2_lay.addWidget(self.cheby2_inputs['freq_max'], 1, 3)
@@ -1601,6 +1615,7 @@ class VMDrPPGMainWindow(QMainWindow):
         h_lay = QHBoxLayout(harmonics_group)
         self.filter_harmonics_gain = QDoubleSpinBox()
         self.filter_harmonics_gain.setRange(1.0, 10.0)
+        self.filter_harmonics_gain.setSingleStep(0.1)
         self.filter_harmonics_gain.setValue(self.config.get('traditional_filters', {}).get('harmonics', {}).get('harmonics_gain', 2.0))
         self.filter_harmonics_gain.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         h_lay.addWidget(QLabel("Gain:"))
@@ -1627,6 +1642,7 @@ class VMDrPPGMainWindow(QMainWindow):
         e_lay.addWidget(QLabel("PB Ripple:"), 0, 2)
         self.elliptic_inputs['passband_ripple'] = QDoubleSpinBox()
         self.elliptic_inputs['passband_ripple'].setRange(0.1, 5)
+        self.elliptic_inputs['passband_ripple'].setSingleStep(0.1)
         self.elliptic_inputs['passband_ripple'].setValue(self.config['traditional_filters']['elliptic']['passband_ripple'])
         self.elliptic_inputs['passband_ripple'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         e_lay.addWidget(self.elliptic_inputs['passband_ripple'], 0, 3)
@@ -1638,11 +1654,13 @@ class VMDrPPGMainWindow(QMainWindow):
         e_lay.addWidget(self.elliptic_inputs['stopband_atten'], 0, 5)
         e_lay.addWidget(QLabel("F Min:"), 1, 0)
         self.elliptic_inputs['freq_min'] = QDoubleSpinBox()
+        self.elliptic_inputs['freq_min'].setSingleStep(0.1)
         self.elliptic_inputs['freq_min'].setValue(self.config['traditional_filters']['elliptic']['freq_min'])
         self.elliptic_inputs['freq_min'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         e_lay.addWidget(self.elliptic_inputs['freq_min'], 1, 1)
         e_lay.addWidget(QLabel("F Max:"), 1, 2)
         self.elliptic_inputs['freq_max'] = QDoubleSpinBox()
+        self.elliptic_inputs['freq_max'].setSingleStep(0.1)
         self.elliptic_inputs['freq_max'].setValue(self.config['traditional_filters']['elliptic']['freq_max'])
         self.elliptic_inputs['freq_max'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         e_lay.addWidget(self.elliptic_inputs['freq_max'], 1, 3)
@@ -1679,24 +1697,23 @@ class VMDrPPGMainWindow(QMainWindow):
         savgol_group.setChecked(self.config['traditional_filters']['savgol'].get('enabled', True))
         self.savgol_check = savgol_group
         
-        s_lay = QHBoxLayout(savgol_group)
+        s_lay = QGridLayout(savgol_group) # Changed to QGridLayout
         self.savgol_inputs = {}
-        s_lay.addWidget(QLabel("Window:"))
+        s_lay.addWidget(QLabel("Window:"), 0, 0)
         self.savgol_inputs['window_size'] = QSpinBox()
         self.savgol_inputs['window_size'].setRange(5, 101)
         self.savgol_inputs['window_size'].setSingleStep(2)
         self.savgol_inputs['window_size'].setValue(self.config['traditional_filters']['savgol']['window_size'])
         self.savgol_inputs['window_size'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        s_lay.addWidget(self.savgol_inputs['window_size'])
-        s_lay.addWidget(QLabel("Poly:"))
+        s_lay.addWidget(self.savgol_inputs['window_size'], 0, 1)
+        s_lay.addWidget(QLabel("Poly:"), 1, 0)
         self.savgol_inputs['poly_order'] = QSpinBox()
         self.savgol_inputs['poly_order'].setRange(1, 10)
         self.savgol_inputs['poly_order'].setValue(self.config['traditional_filters']['savgol']['poly_order'])
         self.savgol_inputs['poly_order'].setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        s_lay.addWidget(self.savgol_inputs['poly_order'])
-        s_lay.addStretch()
+        s_lay.addWidget(self.savgol_inputs['poly_order'], 1, 1)
         savgol_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        row2_layout.addWidget(savgol_group)
+        row1_layout.addWidget(savgol_group) # Moved to row 1
 
         # Wavelet
         wavelet_group = QGroupBox("Wavelet Denoising")
@@ -2338,10 +2355,9 @@ class VMDrPPGMainWindow(QMainWindow):
             
         # Mode Selection
         for k, v in self.mode_inputs.items():
-            if k in self.config['mode_selection']:
-                v.setValue(self.config['mode_selection'][k])
-        self.selection_method_combo.setCurrentText(self.config['mode_selection']['selection_method'])
-        self.corr_ref_combo.setCurrentText(self.config['mode_selection']['correlation_reference'])
+            self.config['mode_selection'][k] = v.value()
+        self.config['mode_selection']['selection_method'] = self.selection_method_combo.currentText()
+        self.config['mode_selection']['correlation_reference'] = self.corr_ref_combo.currentText()
         
         # Optimization
         self.config['auto_optimize']['K_range'] = [self.k_min_input.value(), self.k_max_input.value()]
@@ -2352,29 +2368,37 @@ class VMDrPPGMainWindow(QMainWindow):
         self.config['ui_state']['show_individual_modes'] = self.show_imfs_btn.isChecked()
         
         # Traditional Filters
-        self.butter_check.setChecked(self.config['traditional_filters']['butterworth'].get('enabled', True))
-        self.butter_inputs['order'].setValue(self.config['traditional_filters']['butterworth']['order'])
-        self.butter_inputs['freq_min'].setValue(self.config['traditional_filters']['butterworth']['freq_min'])
-        self.butter_inputs['freq_max'].setValue(self.config['traditional_filters']['butterworth']['freq_max'])
+        self.config['traditional_filters']['butterworth'] = {
+            'enabled': self.butter_check.isChecked(),
+            'order': self.butter_inputs['order'].value(),
+            'freq_min': self.butter_inputs['freq_min'].value(),
+            'freq_max': self.butter_inputs['freq_max'].value()
+        }
         
-        self.cheby_check.setChecked(self.config['traditional_filters']['chebyshev'].get('enabled', True))
-        self.cheby_inputs['order'].setValue(self.config['traditional_filters']['chebyshev']['order'])
-        self.cheby_inputs['ripple'].setValue(self.config['traditional_filters']['chebyshev']['ripple'])
-        self.cheby_inputs['freq_min'].setValue(self.config['traditional_filters']['chebyshev']['freq_min'])
-        self.cheby_inputs['freq_max'].setValue(self.config['traditional_filters']['chebyshev']['freq_max'])
+        self.config['traditional_filters']['chebyshev'] = {
+            'enabled': self.cheby_check.isChecked(),
+            'order': self.cheby_inputs['order'].value(),
+            'ripple': self.cheby_inputs['ripple'].value(),
+            'freq_min': self.cheby_inputs['freq_min'].value(),
+            'freq_max': self.cheby_inputs['freq_max'].value()
+        }
         
-        self.cheby2_check.setChecked(self.config['traditional_filters']['cheby2'].get('enabled', False))
-        self.cheby2_inputs['order'].setValue(self.config['traditional_filters']['cheby2']['order'])
-        self.cheby2_inputs['stopband_atten'].setValue(self.config['traditional_filters']['cheby2']['stopband_atten'])
-        self.cheby2_inputs['freq_min'].setValue(self.config['traditional_filters']['cheby2']['freq_min'])
-        self.cheby2_inputs['freq_max'].setValue(self.config['traditional_filters']['cheby2']['freq_max'])
+        self.config['traditional_filters']['cheby2'] = {
+            'enabled': self.cheby2_check.isChecked(),
+            'order': self.cheby2_inputs['order'].value(),
+            'stopband_atten': self.cheby2_inputs['stopband_atten'].value(),
+            'freq_min': self.cheby2_inputs['freq_min'].value(),
+            'freq_max': self.cheby2_inputs['freq_max'].value()
+        }
 
-        self.elliptic_check.setChecked(self.config['traditional_filters']['elliptic'].get('enabled', False))
-        self.elliptic_inputs['order'].setValue(self.config['traditional_filters']['elliptic']['order'])
-        self.elliptic_inputs['passband_ripple'].setValue(self.config['traditional_filters']['elliptic']['passband_ripple'])
-        self.elliptic_inputs['stopband_atten'].setValue(self.config['traditional_filters']['elliptic']['stopband_atten'])
-        self.elliptic_inputs['freq_min'].setValue(self.config['traditional_filters']['elliptic']['freq_min'])
-        self.elliptic_inputs['freq_max'].setValue(self.config['traditional_filters']['elliptic']['freq_max'])
+        self.config['traditional_filters']['elliptic'] = {
+            'enabled': self.elliptic_check.isChecked(),
+            'order': self.elliptic_inputs['order'].value(),
+            'passband_ripple': self.elliptic_inputs['passband_ripple'].value(),
+            'stopband_atten': self.elliptic_inputs['stopband_atten'].value(),
+            'freq_min': self.elliptic_inputs['freq_min'].value(),
+            'freq_max': self.elliptic_inputs['freq_max'].value()
+        }
         
         self.config['traditional_filters']['moving_average'] = {
             'enabled': self.ma_check.isChecked(),
@@ -2394,31 +2418,19 @@ class VMDrPPGMainWindow(QMainWindow):
             'threshold_mode': self.wavelet_inputs['threshold_mode'].currentText()
         }
         
-        if 'harmonics' in self.config['traditional_filters']:
-            self.filter_harmonics_check.setChecked(self.config['traditional_filters']['harmonics'].get('enabled', False))
-            self.filter_harmonics_gain.setValue(self.config['traditional_filters']['harmonics'].get('harmonics_gain', 2.0))
+        self.config['traditional_filters']['harmonics'] = {
+            'enabled': self.filter_harmonics_check.isChecked(),
+            'harmonics_gain': self.filter_harmonics_gain.value()
+        }
         
         # Shared Controls (Signal)
-        start = self.config.get('signal', {}).get('start_time', 1.0)
-        duration = self.config.get('signal', {}).get('duration', 10.0)
-        fps = self.config['fps']
-        chart_height = self.config.get('chart_height', 200)
-        
-        for controls in self.shared_controls:
-            controls['start'].blockSignals(True)
-            controls['dur'].blockSignals(True)
-            controls['fps'].blockSignals(True)
-            controls['chart_height'].blockSignals(True)
-            
-            controls['start'].setValue(start)
-            controls['dur'].setValue(duration)
-            controls['fps'].setValue(fps)
-            controls['chart_height'].setValue(chart_height)
-            
-            controls['start'].blockSignals(False)
-            controls['dur'].blockSignals(False)
-            controls['fps'].blockSignals(False)
-            controls['chart_height'].blockSignals(False)
+        if self.shared_controls:
+            controls = self.shared_controls[0]
+            if 'signal' not in self.config: self.config['signal'] = {}
+            self.config['signal']['start_time'] = controls['start'].value()
+            self.config['signal']['duration'] = controls['dur'].value()
+            self.config['fps'] = controls['fps'].value()
+            self.config['chart_height'] = controls['chart_height'].value()
             
         # Pipeline Steps
         pipeline_data = []

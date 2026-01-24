@@ -13,19 +13,19 @@
     "harmonics": {
       "enabled": false,
       "harmonics_gain": 2.0,
-      "freq_min": 0.7,
-      "freq_max": 4.0
+      "freq_min": 0.83,
+      "freq_max": 2.5
     },
     "fft_size": 1024
   },
   "vmd": {
     "K": 4,
-    "alpha": 99.99,
+    "alpha": 100.00,
     "tau": 0.0,
     "DC": 0,
     "init": 1,
     "tol": 0.0,
-    "ALPHA": 99.99,
+    "ALPHA": 100.00,
     "TAU": 0.0,
     "INIT": 1,
     "TOL": 0.0
@@ -42,11 +42,11 @@
   "auto_optimize": {
     "K_range": [
       3,
-      7
+      10
     ],
     "alpha_range": [
-      99.99,
-      99.99
+      100.00,
+      5000.00
     ],
     "optimization_metric": "spectral_purity"
   },
