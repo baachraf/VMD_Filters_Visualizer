@@ -4,15 +4,19 @@ A toolbox for Variational Mode Decomposition (VMD) and Signal Processing for bio
 
 ## 📸 Overview
 
-### 1. VMD Analysis & Optimization
+### 1. Data Import & Exploration
+![Data Exploration](images/exploration.png)
+The first step is to load your CSV data and select the signal column. This tab performs an automated **Signal Quality Assessment**, providing 11+ metrics (SNR, Skewness, Kurtosis, Periodicity) and a 100-point quality score to help you decide if the signal is suitable for advanced processing.
+
+### 2. VMD Analysis & Optimization
 ![VMD Analysis](images/vmd.png)
 The core engine uses Variational Mode Decomposition to extract physiological signals from noise. It includes an optimization engine to help find suitable decomposition parameters ($K$ and $\alpha$).
 
-### 2. Filter Comparison
+### 3. Filter Comparison
 ![Filter Comparison](images/filter_comaprison.png)
 Compare different traditional filtering techniques (Butterworth, Chebyshev, Elliptic, Wavelet, etc.) side-by-side to see how they perform on your data.
 
-### 3. Sequential Filter Pipeline
+### 4. Sequential Filter Pipeline
 ![Filter Pipeline](images/pipeline.png)
 Build filtering chains where filters are applied one after another. You can visualize the signal after every step in the process.
 
@@ -46,6 +50,11 @@ Finding the right $K$ (number of modes) and $\alpha$ (bandwidth constraint) is i
 - **IIR Filters:** Butterworth (BP, HP, LP), Chebyshev I & II, Elliptic, and Notch.
 - **Smoothing:** Moving Average and Savitzky-Golay.
 - **Denoising:** Wavelet Denoising and Harmonic Enhancement.
+
+### Signal Quality & Diagnostics
+- **Automated Score**: A 100-point Signal Quality Score (Excellent, Good, Fair, Poor).
+- **Expert Metrics**: SNR, Skewness, Kurtosis, RMS, and Crest Factor.
+- **Periodicity**: Autocorrelation (ACF) analysis and cycle detection to estimate pulse heart rate.
 
 ### Visualization
 Each analysis stage shows three synchronized views:
