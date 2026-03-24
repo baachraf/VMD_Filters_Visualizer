@@ -686,32 +686,19 @@ class VMDrPPGMainWindow(QMainWindow):
         config_content = QWidget()
         config_layout = QVBoxLayout(config_content)
         
-        # Subject Info (Shared)
-        config_layout.addWidget(self.create_shared_info_widget())
-        
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        config_layout.addWidget(line)
-
-        # Import Controls
-        import_controls = QHBoxLayout()
-        
-        import_controls.addWidget(QLabel("<b>Column:</b>"))
+        # Subject Info (Shar        # Subject Info (Shared) with extra controls for this tab
+        col_label = QLabel("<b>Column:</b>")
         self.column_combo = QComboBox()
         self.column_combo.setMinimumWidth(150)
         self.column_combo.currentTextChanged.connect(self.on_column_changed)
-        import_controls.addWidget(self.column_combo)
         
-        import_controls.addSpacing(10)
-        
-        self.run_import_btn = QPushButton("▶ Preview Selection")
+        self.run_import_btn = QPushButton("▶ Run")
         self.run_import_btn.clicked.connect(self.run_import_preview)
         self.run_import_btn.setStyleSheet("QPushButton { background-color: #10b981; color: white; font-weight: bold; padding: 6px 20px; border-radius: 4px; }")
-        import_controls.addStretch()
-        import_controls.addWidget(self.run_import_btn)
         
-        config_layout.addLayout(import_controls)
+        info_widget = self.create_shared_info_widget(extra_widgets=[col_label, self.column_combo, self.run_import_btn])
+        config_layout.addWidget(info_widget)
+        
         config_box.setContentLayout(config_layout)
         main_layout.addWidget(config_box)
         main_layout.addStretch()
@@ -1145,7 +1132,8 @@ class VMDrPPGMainWindow(QMainWindow):
         self.shared_psd_axis = None
         
         # Original Raw Signal
-        self.add_chart_row("Selected Column Preview", signal, "#3b82f6", None, hr_raw, snr_raw,
+        column_name = self.column_combo.currentText()
+        self.add_chart_row(column_name, signal, "#3b82f6", None, hr_raw, snr_raw,
                            target_layout=self.import_results_layout,
                            target_chart_rows_list=self.eda_chart_rows)
 
@@ -1172,7 +1160,7 @@ class VMDrPPGMainWindow(QMainWindow):
         # Import is index 0
         self.results_stack.setCurrentIndex(0)
 
-    def create_shared_info_widget(self):
+    def create_shared_info_widget(self, extra_widgets=None):
         """Creates a subject info widget and registers its controls for sync"""
         container = QFrame()
         container.setFrameShape(QFrame.StyledPanel)
@@ -1244,6 +1232,14 @@ class VMDrPPGMainWindow(QMainWindow):
         chart_height_spin.valueChanged.connect(self.sync_shared_controls)
         layout.addWidget(chart_height_spin)
         
+        if extra_widgets:
+            sep = QFrame()
+            sep.setFrameShape(QFrame.VLine)
+            sep.setFrameShadow(QFrame.Sunken)
+            layout.addWidget(sep)
+            for w in extra_widgets:
+                layout.addWidget(w)
+                
         layout.addStretch()
         
         # Register controls
