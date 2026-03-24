@@ -868,3 +868,123 @@ def smart_vmd_analysis(sig: np.ndarray, fps: float,
     }
     
     return recommendations
+
+
+def calculate_acf(sig: np.ndarray, fps: float, max_lag_sec: float = 2.0) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate Autocorrelation Function (ACF)
+    """
+    n = len(sig)
+    max_lag = int(max_lag_sec * fps)
+    if max_lag >= n:
+        max_lag = n - 1
+        
+    # Standardize
+    sig_norm = (sig - np.mean(sig)) / (np.std(sig) + 1e-8)
+    
+    # Compute ACF
+    acf = np.correlate(sig_norm, sig_norm, mode='full')
+    acf = acf[n-1:n+max_lag]
+    acf = acf / acf[0] # Normalize by lag 0
+    
+    lags = np.arange(0, max_lag + 1) / fps
+    return lags, acf
+
+
+def get_acf_peak(lags: np.ndarray, acf: np.ndarray, fps: float) -> Dict[str, Any]:
+    """
+    Extract the strongest peak from ACF in the physiological range (0.5 - 4 Hz)
+    """
+    # Exclude lag 0 (always 1.0)
+    # Physiological range: 0.25s (240 BPM) to 2.0s (30 BPM)
+    min_lag_idx = int(0.25 * fps)
+    max_lag_idx = int(2.0 * fps)
+    
+    if len(acf) <= min_lag_idx:
+        return {'peak_val': 0.0, 'peak_lag': 0.0}
+        
+    search_range = acf[min_lag_idx:min(max_lag_idx, len(acf))]
+    if len(search_range) == 0:
+        return {'peak_val': 0.0, 'peak_lag': 0.0}
+        
+    peak_idx_within = np.argmax(search_range)
+    peak_val = search_range[peak_idx_within]
+    peak_lag = lags[min_lag_idx + peak_idx_within]
+    
+    return {
+        'peak_val': peak_val,
+        'peak_lag': peak_lag,
+        'hr_estimate': 60.0 / peak_lag if peak_lag > 0 else 0.0
+    }
+
+
+def calculate_quality_metrics(sig: np.ndarray, fps: float) -> Dict[str, Any]:
+    """
+    Calculate expert-level signal quality metrics.
+    """
+    from scipy.stats import skew, kurtosis
+    
+    s = skew(sig)
+    k = kurtosis(sig)
+    rms = np.sqrt(np.mean(np.square(sig)))
+    crest_factor = np.max(np.abs(sig)) / rms if rms > 0 else 0
+    
+    # SNR (relative to itself for baseline, usually calculated against ground truth, 
+    # but here we use the existing estimate_heart_rate/calculate_snr logic)
+    snr = calculate_snr(sig, sig, fps)
+    
+    # Simple quality score (0 to 100)
+    # Penalize high kurtosis (>3), high skewness, and low SNR
+    snr_score = np.clip((snr + 10) / 20 * 50, 0, 50) # -10 to 10 dB maps to 0-50
+    k_penalty = np.clip((abs(k) - 1) * 10, 0, 25)
+    s_penalty = np.clip(abs(s) * 15, 0, 25)
+    
+    quality_score = np.clip(snr_score + 50 - k_penalty - s_penalty, 0, 100)
+    
+    if quality_score > 80: status = "Excellent"
+    elif quality_score > 60: status = "Good"
+    elif quality_score > 40: status = "Fair"
+    else: status = "Poor"
+    
+    return {
+        'skewness': s,
+        'kurtosis': k,
+        'rms': rms,
+        'crest_factor': crest_factor,
+        'snr': snr,
+        'quality_score': quality_score,
+        'quality_status': status
+    }
+
+
+def detect_cycles(sig: np.ndarray, fps: float) -> Dict[str, Any]:
+    """
+    Detect cycles and estimate periodicity using peak detection
+    """
+    # Normalize/Detrend
+    sig_detrended = sig - np.mean(sig)
+    if np.std(sig_detrended) > 0:
+        sig_detrended /= np.std(sig_detrended)
+    
+    # Peak detection (Pulse peaks)
+    # distance = fps * 0.5 (Assume max 120 BPM -> 0.5s between beats)
+    peaks, _ = signal.find_peaks(sig_detrended, distance=int(fps * 0.4), height=0.5)
+    num_cycles = len(peaks)
+    
+    if num_cycles > 1:
+        cycle_lengths = np.diff(peaks) / fps
+        avg_cycle_len = np.mean(cycle_lengths)
+        periodicity_score = 1.0 - (np.std(cycle_lengths) / (avg_cycle_len + 1e-8))
+        periodicity_score = max(0.0, min(1.0, periodicity_score))
+        avg_hr = 60.0 / avg_cycle_len
+    else:
+        avg_cycle_len = 0.0
+        periodicity_score = 0.0
+        avg_hr = 0.0
+        
+    return {
+        'num_cycles': num_cycles,
+        'avg_cycle_len': avg_cycle_len,
+        'periodicity_score': periodicity_score,
+        'avg_hr': avg_hr
+    }

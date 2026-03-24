@@ -464,6 +464,7 @@ class VMDrPPGMainWindow(QMainWindow):
         self.vmd_chart_rows = []
         self.filter_chart_rows = []
         self.pipeline_chart_rows = []
+        self.eda_chart_rows = []
         self.pipeline_steps = []
         
         self.init_ui()
@@ -520,6 +521,9 @@ class VMDrPPGMainWindow(QMainWindow):
         self.tabs = DynamicTabWidget()
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         
+        import_tab = self.create_import_tab()
+        self.tabs.addTab(import_tab, "Data Import & Exploration")
+
         vmd_tab = self.create_vmd_tab()
         self.tabs.addTab(vmd_tab, "VMD Analysis")
 
@@ -534,6 +538,17 @@ class VMDrPPGMainWindow(QMainWindow):
         # Create a stacked widget to hold the results for each tab
         self.results_stack = QStackedWidget()
         
+        # Import Results Area
+        self.import_results_area = QScrollArea()
+        self.import_results_area.setWidgetResizable(True)
+        self.import_results_area.setFrameShape(QFrame.NoFrame)
+        self.import_results_widget = QWidget()
+        self.import_results_layout = QVBoxLayout(self.import_results_widget)
+        self.import_results_layout.setSpacing(0)
+        self.import_results_layout.setContentsMargins(0, 0, 0, 0)
+        self.import_results_area.setWidget(self.import_results_widget)
+        self.results_stack.addWidget(self.import_results_area)
+
         # VMD Results Area
         self.vmd_results_area = QScrollArea()
         self.vmd_results_area.setWidgetResizable(True)
@@ -590,6 +605,17 @@ class VMDrPPGMainWindow(QMainWindow):
                 child.widget().deleteLater()
         self.vmd_chart_rows = [] # Clear the list of chart rows
 
+    def clear_import_results(self):
+        self.shared_x_axis = None
+        self.shared_psd_axis = None
+        if not hasattr(self, 'import_results_layout') or self.import_results_layout is None:
+            return
+        while self.import_results_layout.count():
+            child = self.import_results_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        self.eda_chart_rows = []
+
     def clear_filter_results(self):
         self.shared_x_axis = None # Reset shared axes when clearing
         self.shared_psd_axis = None
@@ -611,6 +637,89 @@ class VMDrPPGMainWindow(QMainWindow):
             if child.widget():
                 child.widget().deleteLater()
         self.pipeline_chart_rows = []
+
+    def on_column_changed(self, col_name):
+        self.config['rppg_column_name'] = col_name
+
+    def create_metric_card(self, title, value, unit="", color="#2563eb", bg_color="#eff6ff", border_color="#bfdbfe"):
+        card = QWidget()
+        layout = QVBoxLayout(card)
+        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        title_label = QLabel(title.upper())
+        title_label.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; letter-spacing: 1px;")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # Check for numeric type to format nicely
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            val_text = f"{float(value):.2f}"
+        else:
+            val_text = str(value)
+            
+        val_label = QLabel(f"<span style='color: {color};'>{val_text}</span> <small style='color: #64748b; font-weight: normal;'>{unit}</small>")
+        val_label.setAlignment(Qt.AlignCenter)
+        val_label.setStyleSheet(f"""
+            QLabel {{ 
+                background-color: {bg_color}; 
+                border: 1px solid {border_color}; 
+                border-radius: 8px; 
+                padding: 10px; 
+                font-size: 20px; 
+                font-weight: bold;
+            }}
+        """)
+        layout.addWidget(val_label)
+        
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        return card
+
+    def create_import_tab(self):
+        tab = QWidget()
+        main_layout = QVBoxLayout(tab)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+
+        # Config Box
+        config_box = CollapsibleBox("Data Source & Selection")
+        config_content = QWidget()
+        config_layout = QVBoxLayout(config_content)
+        
+        # Subject Info (Shared)
+        config_layout.addWidget(self.create_shared_info_widget())
+        
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        config_layout.addWidget(line)
+
+        # Import Controls
+        import_controls = QHBoxLayout()
+        
+        import_controls.addWidget(QLabel("<b>Column:</b>"))
+        self.column_combo = QComboBox()
+        self.column_combo.setMinimumWidth(150)
+        self.column_combo.currentTextChanged.connect(self.on_column_changed)
+        import_controls.addWidget(self.column_combo)
+        
+        import_controls.addSpacing(10)
+        
+        self.run_import_btn = QPushButton("▶ Preview Selection")
+        self.run_import_btn.clicked.connect(self.run_import_preview)
+        self.run_import_btn.setStyleSheet("QPushButton { background-color: #10b981; color: white; font-weight: bold; padding: 6px 20px; border-radius: 4px; }")
+        import_controls.addStretch()
+        import_controls.addWidget(self.run_import_btn)
+        
+        config_layout.addLayout(import_controls)
+        config_box.setContentLayout(config_layout)
+        main_layout.addWidget(config_box)
+        main_layout.addStretch()
+
+        return tab
+
+    def on_column_changed(self, col_name):
+        self.config['rppg_column_name'] = col_name
 
     def create_combination_tab(self):
         tab = QWidget()
@@ -946,8 +1055,122 @@ class VMDrPPGMainWindow(QMainWindow):
                 break
 
         self.finalize_chart_layout(self.pipeline_chart_rows)
+        
+        # --- Add Pipeline Summary Cards ---
+        if self.pipeline_chart_rows and len(self.pipeline_steps) > 0:
+            pipeline_cards_container = QWidget()
+            pipeline_cards_lay = QHBoxLayout(pipeline_cards_container)
+            pipeline_cards_lay.setContentsMargins(10, 5, 10, 10)
+            pipeline_cards_lay.setSpacing(15)
+            
+            # Use last calculated metrics from the loop
+            pipeline_cards_lay.addWidget(self.create_metric_card("Total Steps", len(self.pipeline_steps), "filters", color="#8b5cf6", bg_color="#f5f3ff", border_color="#ddd6fe"))
+            pipeline_cards_lay.addWidget(self.create_metric_card("Final SNR", snr, "dB", color="#0891b2", bg_color="#ecfeff", border_color="#a5f3fc"))
+            pipeline_cards_lay.addWidget(self.create_metric_card("Final Freq", hr / 60.0, "Hz", color="#ef4444", bg_color="#fef2f2", border_color="#fecaca"))
+            pipeline_cards_lay.addWidget(self.create_metric_card("Total Gain", snr - snr_raw, "dB", color="#10b981", bg_color="#f0fdf4", border_color="#bbf7d0"))
+            
+            self.pipeline_results_layout.insertWidget(0, pipeline_cards_container)
+
         # Switch to the pipeline results area automatically
-        self.results_stack.setCurrentIndex(2)
+        self.results_stack.setCurrentIndex(3)
+
+    def run_import_preview(self):
+        signal = self.get_selected_signal_segment()
+        if signal is None or len(signal) == 0:
+            QMessageBox.warning(self, "No Signal Selected", "Please select a CSV file and column first.")
+            return
+
+        self.clear_import_results()
+        fps = self.config['fps']
+
+        # 1. Calculate Metrics
+        mean_val = np.mean(signal)
+        std_val = np.std(signal)
+        min_val = np.min(signal)
+        max_val = np.max(signal)
+        
+        cycle_info = computation.detect_cycles(signal, fps)
+        lags, acf = computation.calculate_acf(signal, fps)
+        acf_info = computation.get_acf_peak(lags, acf, fps)
+        quality_metrics = computation.calculate_quality_metrics(signal, fps)
+        
+        # --- UI Row 0: Quality Assessment Badge ---
+        quality_container = QWidget()
+        quality_lay = QHBoxLayout(quality_container)
+        quality_lay.setContentsMargins(10, 5, 10, 5)
+        
+        status_color = "#10b981" if quality_metrics['quality_status'] == "Excellent" else \
+                       "#3b82f6" if quality_metrics['quality_status'] == "Good" else \
+                       "#f59e0b" if quality_metrics['quality_status'] == "Fair" else "#ef4444"
+                       
+        badge = QLabel(f"SIGNAL QUALITY: {quality_metrics['quality_status'].upper()} (Score: {quality_metrics['quality_score']:.0f}/100)")
+        badge.setStyleSheet(f"background-color: {status_color}; color: white; padding: 10px; border-radius: 8px; font-size: 15px; font-weight: bold; letter-spacing: 1px;")
+        badge.setAlignment(Qt.AlignCenter)
+        quality_lay.addWidget(badge)
+        self.import_results_layout.addWidget(quality_container)
+
+        # --- UI Row 1: Basic & periodicity Metrics ---
+        row1_container = QWidget()
+        row1_layout = QHBoxLayout(row1_container)
+        row1_layout.setContentsMargins(10, 5, 10, 5)
+        row1_layout.setSpacing(15)
+        
+        row1_layout.addWidget(self.create_metric_card("Mean", mean_val))
+        row1_layout.addWidget(self.create_metric_card("Std Dev", std_val))
+        row1_layout.addWidget(self.create_metric_card("Cycles", cycle_info['num_cycles'], "beats", color="#10b981", bg_color="#f0fdf4", border_color="#bbf7d0"))
+        row1_layout.addWidget(self.create_metric_card("ACF Peak", acf_info['peak_val'], "", color="#db2777", bg_color="#fdf2f8", border_color="#fbcfe8"))
+        row1_layout.addWidget(self.create_metric_card("Periodicity", cycle_info['periodicity_score'] * 100, "%", color="#8b5cf6", bg_color="#f5f3ff", border_color="#ddd6fe"))
+        row1_layout.addWidget(self.create_metric_card("Main Freq", cycle_info['avg_hr'] / 60.0, "Hz", color="#ef4444", bg_color="#fef2f2", border_color="#fecaca"))
+        self.import_results_layout.addWidget(row1_container)
+        
+        # --- UI Row 2: Expert Quality Metrics ---
+        row2_container = QWidget()
+        row2_layout = QHBoxLayout(row2_container)
+        row2_layout.setContentsMargins(10, 5, 10, 5)
+        row2_layout.setSpacing(15)
+        
+        row2_layout.addWidget(self.create_metric_card("SNR", quality_metrics['snr'], "dB", color="#0891b2", bg_color="#ecfeff", border_color="#a5f3fc"))
+        row2_layout.addWidget(self.create_metric_card("Skewness", quality_metrics['skewness'], "", color="#4f46e5", bg_color="#eef2ff", border_color="#c7d2fe"))
+        row2_layout.addWidget(self.create_metric_card("Kurtosis", quality_metrics['kurtosis'], "", color="#7c3aed", bg_color="#f5f3ff", border_color="#ddd6fe"))
+        row2_layout.addWidget(self.create_metric_card("RMS", quality_metrics['rms'], "", color="#2563eb", bg_color="#eff6ff", border_color="#bfdbfe"))
+        row2_layout.addWidget(self.create_metric_card("Crest Factor", quality_metrics['crest_factor'], "", color="#ea580c", bg_color="#fff7ed", border_color="#fed7aa"))
+        self.import_results_layout.addWidget(row2_container)
+
+        # 3. Plots (Raw Signal Preview)
+        hr_raw = computation.estimate_heart_rate(signal, fps)
+        snr_raw = computation.calculate_snr(signal, signal, fps)
+        
+        # Reset shared axes to prevent syncing between signal and ACF in this tab
+        self.shared_x_axis = None
+        self.shared_psd_axis = None
+        
+        # Original Raw Signal
+        self.add_chart_row("Selected Column Preview", signal, "#3b82f6", None, hr_raw, snr_raw,
+                           target_layout=self.import_results_layout,
+                           target_chart_rows_list=self.eda_chart_rows)
+
+        # Reset again for ACF so it gets its own scale
+        self.shared_x_axis = None
+        self.shared_psd_axis = None
+        
+        # Autocorrelation (ACF) Plot
+        acf_canvas = self.add_chart_row("Autocorrelation Function (ACF)", acf, "#8b5cf6", None, None, None,
+                                        target_layout=self.import_results_layout,
+                                        target_chart_rows_list=self.eda_chart_rows)
+        # Fix X-axis label for ACF
+        acf_canvas.ax_sig.set_xlabel("Lag (s)")
+        acf_canvas.ax_sig.set_ylabel("Correlation")
+        
+        # Add legend/metrics to ACF - use Main Freq instead of HR as requested
+        acf_metrics_text = f"Peak: {acf_info['peak_val']:.3f}\nLag: {acf_info['peak_lag']:.2f} s\nMain Freq: {acf_info['hr_estimate'] / 60.0:.2f} Hz"
+        acf_canvas.ax_psd.text(0.98, 0.95, acf_metrics_text, transform=acf_canvas.ax_psd.transAxes,
+                                    verticalalignment='top', horizontalalignment='right',
+                                    fontsize='small', fontweight='bold', color='#db2777',
+                                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='#fbcfe8'))
+
+        self.finalize_chart_layout(self.eda_chart_rows)
+        # Import is index 0
+        self.results_stack.setCurrentIndex(0)
 
     def create_shared_info_widget(self):
         """Creates a subject info widget and registers its controls for sync"""
@@ -1767,6 +1990,10 @@ class VMDrPPGMainWindow(QMainWindow):
 
     def update_chart_heights(self):
         height = self.config.get('chart_height', 200)
+        # Update EDA/Import charts
+        for canvas in self.eda_chart_rows:
+            canvas.setMinimumHeight(height)
+            canvas.updateGeometry()
         # Update VMD charts
         for canvas in self.vmd_chart_rows:
             canvas.setMinimumHeight(height)
@@ -1801,15 +2028,32 @@ class VMDrPPGMainWindow(QMainWindow):
         filename = item.text()
         filepath = os.path.join(self.current_directory, filename)
         try:
+            # Only read header to populate column dropdown
+            df_head = pd.read_csv(filepath, nrows=1)
+            columns = df_head.columns.tolist()
+            
+            self.column_combo.blockSignals(True)
+            self.column_combo.clear()
+            self.column_combo.addItems(columns)
+            
+            # Select default column if exists
+            default_col = self.config.get('rppg_column_name', '')
+            if default_col in columns:
+                self.column_combo.setCurrentText(default_col)
+            elif columns:
+                self.column_combo.setCurrentIndex(0)
+                self.config['rppg_column_name'] = columns[0]
+            self.column_combo.blockSignals(False)
+
+            # Full load for processing
             df = pd.read_csv(filepath)
-            col_name = self.config['rppg_column_name']
-            if col_name not in df.columns:
-                print(f"Column '{col_name}' not found in CSV.")
-                return
-            self.signal_data = df[col_name].values
+            self.signal_data_all = df # Store full dataframe
             self.selected_file_path = filepath
             
             # Update all file labels
+            col_name = self.column_combo.currentText()
+            self.signal_data = df[col_name].values if col_name in df.columns else None
+
             for controls in self.shared_controls:
                 controls['file_label'].setText(filename)
                 controls['rows_label'].setText(f"Rows: {len(df)}")
@@ -1822,6 +2066,11 @@ class VMDrPPGMainWindow(QMainWindow):
             traceback.print_exc()
 
     def get_selected_signal_segment(self):
+        # Update signal_data from signal_data_all based on dropdown
+        col_name = self.column_combo.currentText()
+        if hasattr(self, 'signal_data_all') and col_name in self.signal_data_all.columns:
+            self.signal_data = self.signal_data_all[col_name].values
+        
         if self.signal_data is None: return None
         fps = self.config['fps']
         start = self.config['signal']['start_time']
@@ -1926,6 +2175,26 @@ class VMDrPPGMainWindow(QMainWindow):
         self.shared_psd_axis = None
         if self.vmd_results is None: return
         
+        # --- Add VMD Summary Cards ---
+        vmd_cards_container = QWidget()
+        vmd_cards_lay = QHBoxLayout(vmd_cards_container)
+        vmd_cards_lay.setContentsMargins(10, 5, 10, 10)
+        vmd_cards_lay.setSpacing(15)
+        
+        # Find best mode index
+        best_idx = 0
+        if 'mode_info' in self.vmd_results:
+            best_idx = next((i for i, info in enumerate(self.vmd_results['mode_info']) if info['selected']), 0)
+            best_info = self.vmd_results['mode_info'][best_idx]
+            
+            vmd_cards_lay.addWidget(self.create_metric_card("Best IMF", f"Mode {best_idx + 1}", "", color="#10b981", bg_color="#f0fdf4", border_color="#bbf7d0"))
+            vmd_cards_lay.addWidget(self.create_metric_card("IMF Freq", best_info['center_freq'], "Hz", color="#3b82f6", bg_color="#eff6ff", border_color="#bfdbfe"))
+            vmd_cards_lay.addWidget(self.create_metric_card("IMF Energy", best_info['energy'], "%", color="#8b5cf6", bg_color="#f5f3ff", border_color="#ddd6fe"))
+            vmd_cards_lay.addWidget(self.create_metric_card("Output SNR", self.vmd_results['snr'], "dB", color="#0891b2", bg_color="#ecfeff", border_color="#a5f3fc"))
+            vmd_cards_lay.addWidget(self.create_metric_card("Output Freq", self.vmd_results['hr'] / 60.0, "Hz", color="#ef4444", bg_color="#fef2f2", border_color="#fecaca"))
+        
+        self.vmd_results_layout.addWidget(vmd_cards_container)
+        
         # self.vmd_chart_rows is cleared in clear_vmd_results()
 
         fps = self.config['fps']
@@ -1967,6 +2236,7 @@ class VMDrPPGMainWindow(QMainWindow):
         add_row_vmd("Extracted rPPG (Selected)", self.vmd_results['extracted'], "#10b981", self.vmd_results['hr'], self.vmd_results['snr'])
 
         self.finalize_chart_layout(self.vmd_chart_rows)
+        self.results_stack.setCurrentIndex(1)
 
     def run_all_filters(self):
         signal = self.get_selected_signal_segment()
@@ -2058,6 +2328,30 @@ class VMDrPPGMainWindow(QMainWindow):
         self.shared_x_axis = None
         self.shared_psd_axis = None
         
+        # --- Add Filter Summary Cards ---
+        if hasattr(self, 'filter_results') and self.filter_results and self.filter_results.get('signals'):
+            filter_cards_container = QWidget()
+            filter_cards_lay = QHBoxLayout(filter_cards_container)
+            filter_cards_lay.setContentsMargins(10, 5, 10, 10)
+            filter_cards_lay.setSpacing(15)
+            
+            # Find filter with max SNR
+            max_snr = -float('inf')
+            best_filter = "None"
+            best_freq = 0.0
+            
+            for f_name, data in self.filter_results['signals'].items():
+                if data['snr'] > max_snr:
+                    max_snr = data['snr']
+                    best_filter = f_name
+                    best_freq = data['hr'] / 60.0
+            
+            filter_cards_lay.addWidget(self.create_metric_card("Best Filter", best_filter, "", color="#10b981", bg_color="#f0fdf4", border_color="#bbf7d0"))
+            filter_cards_lay.addWidget(self.create_metric_card("Max SNR", max_snr, "dB", color="#0891b2", bg_color="#ecfeff", border_color="#a5f3fc"))
+            filter_cards_lay.addWidget(self.create_metric_card("Output Freq", best_freq, "Hz", color="#ef4444", bg_color="#fef2f2", border_color="#fecaca"))
+            
+            self.filter_results_layout.addWidget(filter_cards_container)
+            
         # self.filter_chart_rows is cleared in clear_filter_results()
 
         raw_signal = self.get_selected_signal_segment()
@@ -2102,29 +2396,37 @@ class VMDrPPGMainWindow(QMainWindow):
                                             target_chart_rows_list=self.filter_chart_rows)
 
         self.finalize_chart_layout(self.filter_chart_rows)
+        self.results_stack.setCurrentIndex(2)
 
     def finalize_chart_layout(self, chart_rows_list):
         """Adjusts labels and spacing for all generated chart rows."""
+        # For the Import tab (eda_chart_rows), we want labels on every row because they are independent
+        is_eda = (chart_rows_list is self.eda_chart_rows)
+        
         for i, canvas in enumerate(chart_rows_list):
             is_last_row = (i == len(chart_rows_list) - 1)
+            # Show labels on last row OR if it's the EDA tab (all rows independent)
+            show_labels = is_last_row or is_eda
             
-            # Configure X-axis labels
-            canvas.ax_sig.tick_params(labelbottom=is_last_row)
-            canvas.ax_spec.tick_params(labelbottom=is_last_row)
-            canvas.ax_psd.tick_params(labelbottom=is_last_row)
+            # Configure X-axis labels visibility
+            canvas.ax_sig.tick_params(labelbottom=show_labels)
+            canvas.ax_spec.tick_params(labelbottom=show_labels)
+            canvas.ax_psd.tick_params(labelbottom=show_labels)
             
-            if is_last_row:
-                canvas.ax_sig.set_xlabel("Time (s)")
+            if show_labels:
+                # Use "Lag (s)" for ACF, "Time (s)" otherwise
+                x_label = "Lag (s)" if "Autocorrelation" in canvas.title else "Time (s)"
+                canvas.ax_sig.set_xlabel(x_label)
                 canvas.ax_spec.set_xlabel("Time (s)")
                 canvas.ax_psd.set_xlabel("Frequency (Hz)")
                 # Margins for row WITH labels
-                canvas.figure.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.20, wspace=0.15)
+                canvas.figure.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.22, wspace=0.2)
             else:
                 canvas.ax_sig.set_xlabel("")
                 canvas.ax_spec.set_xlabel("")
                 canvas.ax_psd.set_xlabel("")
                 # Tighter margins for row WITHOUT labels
-                canvas.figure.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.05, wspace=0.15)
+                canvas.figure.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.05, wspace=0.15)
 
             canvas.draw()
 
@@ -2166,7 +2468,10 @@ class VMDrPPGMainWindow(QMainWindow):
         canvas.ax_sig.set_ylabel("Amp")
         
         def format_unit(x, pos):
-            return f'{x*1e-3:.1f}k' if abs(x) >= 1000 else f'{x:.1f}'
+            if x == 0: return "0"
+            if abs(x) >= 1000: return f'{x*1e-3:.1f}k'
+            if abs(x) < 0.1: return f'{x:.1e}'
+            return f'{x:.1f}'
         canvas.ax_sig.yaxis.set_major_formatter(FuncFormatter(format_unit))
         
         # --- Spectrogram Chart (Middle) ---
